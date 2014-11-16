@@ -161,10 +161,12 @@ fn git_push(branch: &str, target: &str) -> Result<String, DeliveryError> {
     Ok(stdout.into_string())
 }
 
-fn parse_git_push_output(push_output: &str) {
-    for line in push_output.lines_any() {
-        println!("piece: {}", line)
-    }
+fn parse_git_push_output(push_output: &str) -> Vec<&str> {
+    // for line in push_output.lines_any() {
+    //     println!("piece: {}", line)
+    // }
+    let v : Vec<&str> = push_output.lines_any().collect();
+    return v;
 }
 
 #[test]
@@ -172,10 +174,16 @@ fn test_parse_git_push_output() {
     let input = String::from_str("To ssh://adam@127.0.0.1/Users/adam/src/opscode/delivery/opscode/delivery-cli2
 =	refs/heads/foo:refs/heads/_for/master/foo	[up to date]
 Done");
-    let results: Vec<String> = parse_git_push_output(input);
-    let mut valid_result: Vec<String> = Vec::new();
-    valid_result.push(String::from_str("Review branch _for/master/foo is up to date"));
-    assert_eq!(valid_result, results);
+    let results: Vec<&str> = parse_git_push_output(input.as_slice());
+    // let mut valid_result: Vec<String> = Vec::new();
+    // valid_result = ;
+    //     //.push(String::from_str("Review branch _for/master/foo is
+    //     up to date"));
+    let expect = vec![
+        "To ssh://adam@127.0.0.1/Users/adam/src/opscode/delivery/opscode/delivery-cli2",
+        "=	refs/heads/foo:refs/heads/_for/master/foo	[up to date]",
+        "Done"];
+    assert_eq!(expect, results);
 }
 
 fn review(for_pipeline: &str) -> Result<bool, DeliveryError> {

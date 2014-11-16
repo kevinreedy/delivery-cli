@@ -11,6 +11,7 @@ use git2::Repository;
 use std::os;
 use std::error;
 use std::error::FromError;
+use std::io::Command;
 
 docopt!(Args deriving Show, "
 Usage: delivery review [--for=<pipeline>]
@@ -43,6 +44,9 @@ fn main() {
 enum ErrorKind {
     NoMatchingCommand,
     NotOnABranch,
+    FailedToExecute,
+    PushFailed,
+    CannotReviewSameBranch,    
     GitError(git2::Error),
 }
 
@@ -56,6 +60,9 @@ impl error::Error for DeliveryError {
         match self.kind {
             NoMatchingCommand => "No command matches your arguments - likely unimplemented feature",
             NotOnABranch => "You must be on a branch",
+            FailedToExecute => "Guess it could not execute",
+            PushFailed => "git push failed",
+            CannotReviewSameBranch => "can't review the same branch",
             GitError(_) => "A git error occured",
         }
     }
@@ -177,13 +184,13 @@ fn review(for_pipeline: &str) -> Result<bool, DeliveryError> {
     if for_pipeline == head.as_slice() {
         return Err(DeliveryError{ kind: CannotReviewSameBranch, detail: None })
     }
-    say("green", "Delivery");
-    say("white", " review for change ");
-    say("yellow", head.as_slice());
-    say("white", " targeted for pipeline ");
-    sayln("magenta", for_pipeline.as_slice());
+    say_green("Delivery");
+    say_green(" review for change ");
+    say_green(head.as_slice());
+    say_green(" targeted for pipeline ");
+    say_redln(for_pipeline.as_slice());
     let output = try!(git_push(head.as_slice(), for_pipeline));
-    sayln("white", output.as_slice());
+    say_greenln(output.as_slice());
     Ok(true)
 }
 

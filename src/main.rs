@@ -64,7 +64,7 @@ Usage: delivery review [--for=<pipeline>] [--no-open] [--edit]
        delivery diff <change> [--for=<pipeline>] [--patchset=<number>] [--local]
        delivery init [--user=<user>] [--server=<server>] [--ent=<ent>] [--org=<org>] [--project=<project>] [--no-open] [--skip-build-cookbook] [--local]
        delivery setup [--user=<user>] [--server=<server>] [--ent=<ent>] [--org=<org>] [--config-path=<dir>] [--for=<pipeline>]
-       delivery job <stage> <phase> [--change=<change>] [--for=<pipeline>] [--job-root=<dir>] [--branch=<branch_name>] [--project=<project>] [--user=<user>] [--server=<server>] [--ent=<ent>] [--org=<org>] [--patchset=<number>] [--git-url=<url>] [--shasum=<gitsha>] [--change-id=<id>] [--no-spinner] [--skip-default] [--local]
+       delivery job <stage> <phase> [--change=<change>] [--for=<pipeline>] [--job-root=<dir>] [--branch=<branch_name>] [--project=<project>] [--user=<user>] [--server=<server>] [--ent=<ent>] [--org=<org>] [--patchset=<number>] [--git-url=<url>] [--shasum=<gitsha>] [--change-id=<id>] [--no-spinner] [--skip-default] [--local] [--docker=<image>]
        delivery pipeline [--for=<pipeline>] [--user=<user>] [--server=<server>] [--ent=<ent>] [--org=<org>] [--project=<project>] [--config-path=<dir>]
        delivery api <method> <path> [--user=<user>] [--server=<server>] [--api-port=<api_port>] [--ent=<ent>] [--config-path=<dir>] [--data=<data>]
        delivery token [--user=<user>] [--server=<server>] [--api-port=<api_port>] [--ent=<ent>]
@@ -206,12 +206,13 @@ fn main() {
             flag_branch: ref branch,
             flag_skip_default: ref skip_default,
             flag_local: ref local,
+            flag_docker: ref docker_image,
             ..
         } => {
             if no_spinner { say::turn_off_spinner() };
             job(&stage, &phase, &change, &pipeline, &job_root, &project, &user,
                 &server, &ent, &org, &patchset, &change_id, &git_url, &shasum,
-                &branch, &skip_default, &local)
+                &branch, &skip_default, &local, &docker_image)
         },
         Args {
             cmd_token: true,
@@ -518,9 +519,43 @@ fn job(stage: &str,
        shasum: &str,
        branch: &str,
        skip_default: &bool,
-       local: &bool) -> Result<(), DeliveryError>
+       local: &bool,
+       docker_image: &str) -> Result<(), DeliveryError>
 {
     sayln("green", "Chef Delivery");
+    if !docker_image.is_empty() {
+        // then --docker was specified, shell out.
+        let mut docker = utils::make_command("docker");
+        let cwd_path = cwd();
+        let cwd_str = cwd_path.to_str().unwrap();
+        let volume = &[cwd_str, cwd_str].join(":");
+        docker.arg("run")
+            .arg("-t")
+            .arg("-v").arg(volume)
+            .arg("-w").arg(cwd_str)
+            // TODO: get this via config
+            .arg("--dns").arg("8.8.8.8")
+            .arg(docker_image)
+            .arg("delivery").arg("job").arg(stage).arg(phase)
+            .arg("--server").arg("localhost")
+            .arg("--ent").arg("e")
+            .arg("--org").arg("o")
+            .arg("--user").arg("u");
+        debug!("command: {:?}", docker);
+        match docker.output() {
+            Ok(o) => {
+                println!("{}", String::from_utf8_lossy(&o.stdout));
+                return Ok(())
+            },
+            Err(e) => {
+                let msg = format!("failed to execute chef generate: {}",
+                                  error::Error::description(&e));
+                let docker_err = DeliveryError { kind: Kind::FailedToExecute,
+                                                 detail: Some(msg) };
+                return Err(docker_err);
+            }
+        };
+    }
     let mut config = try!(load_config(&cwd()));
     config = if project.is_empty() {
         let filename = String::from(cwd().file_name().unwrap().to_str().unwrap());

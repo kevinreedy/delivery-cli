@@ -32,11 +32,12 @@ extern crate time;
 
 use std::env;
 use std::process;
+use std::process::Stdio;
 use std::error::Error;
 use std::path::PathBuf;
-use std::fs::PathExt;
 use std::error;
 use std::path::Path;
+use std::io::prelude::*;
 
 use delivery::utils::{self, privileged_process};
 
@@ -524,13 +525,18 @@ fn job(stage: &str,
 {
     sayln("green", "Chef Delivery");
     if !docker_image.is_empty() {
-        // then --docker was specified, shell out.
-        let mut docker = utils::make_command("docker");
+        // The --docker flag was specified, let's do this!
         let cwd_path = cwd();
         let cwd_str = cwd_path.to_str().unwrap();
         let volume = &[cwd_str, cwd_str].join(":");
+        // We might want to wrap this in `bash -c $BLAH 2>&1` so that
+        // we get stderr with our streaming output. OTOH, what's here
+        // seems to work in terms of expected output and has a better
+        // chance of working on Windows.
+        let mut docker = utils::make_command("docker");
         docker.arg("run")
             .arg("-t")
+            .arg("-i")
             .arg("-v").arg(volume)
             .arg("-w").arg(cwd_str)
             // TODO: get this via config
@@ -540,22 +546,42 @@ fn job(stage: &str,
             .arg("--server").arg("localhost")
             .arg("--ent").arg("e")
             .arg("--org").arg("o")
-            .arg("--user").arg("u");
+            .arg("--user").arg("u")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
         debug!("command: {:?}", docker);
-        match docker.output() {
-            Ok(o) => {
-                println!("{}", String::from_utf8_lossy(&o.stdout));
-                return Ok(())
-            },
-            Err(e) => {
-                let msg = format!("failed to execute chef generate: {}",
-                                  error::Error::description(&e));
+        let mut child = try!(docker.spawn());
+        let mut c_stdout = match child.stdout {
+            Some(ref mut s) => s,
+            None => {
+                let msg = "failed to execute docker".to_string();
                 let docker_err = DeliveryError { kind: Kind::FailedToExecute,
                                                  detail: Some(msg) };
                 return Err(docker_err);
             }
         };
+        let mut line = String::with_capacity(256);
+        loop {
+            let mut buf = [0u8; 1]; // Our byte buffer
+            let len = try!(c_stdout.read(&mut buf));
+            match len {
+                0 => { // 0 == EOF, so stop writing and finish progress
+                    break;
+                },
+                _ => { // Write the buffer to the BufWriter on the Heap
+                    let buf_vec = buf[0 .. len].to_vec();
+                    let buf_string = String::from_utf8(buf_vec).unwrap();
+                    line.push_str(&buf_string);
+                    if line.contains("\n") {
+                        print!("{}", line);
+                        line = String::with_capacity(256);
+                    }
+                }
+            }
+        }
+        return Ok(());
     }
+
     let mut config = try!(load_config(&cwd()));
     config = if project.is_empty() {
         let filename = String::from(cwd().file_name().unwrap().to_str().unwrap());

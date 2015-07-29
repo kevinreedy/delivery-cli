@@ -32,6 +32,7 @@ extern crate time;
 
 use std::env;
 use std::process;
+use std::process::Command;
 use std::process::Stdio;
 use std::error::Error;
 use std::path::PathBuf;
@@ -534,6 +535,7 @@ fn job(stage: &str,
         // seems to work in terms of expected output and has a better
         // chance of working on Windows.
         let mut docker = utils::make_command("docker");
+
         docker.arg("run")
             .arg("-t")
             .arg("-i")
@@ -542,13 +544,36 @@ fn job(stage: &str,
             // TODO: get this via config
             .arg("--dns").arg("8.8.8.8")
             .arg(docker_image)
-            .arg("delivery").arg("job").arg(stage).arg(phase)
-            .arg("--server").arg("localhost")
-            .arg("--ent").arg("e")
-            .arg("--org").arg("o")
-            .arg("--user").arg("u")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .arg("delivery").arg("job").arg(stage).arg(phase);
+
+        let flags_with_values = vec![("--change", change),
+                                     ("--for", pipeline),
+                                     ("--job-root", job_root),
+                                     ("--project", project),
+                                     ("--user", user),
+                                     ("--server", server),
+                                     ("--ent", ent),
+                                     ("--org", org),
+                                     ("--patchset", patchset),
+                                     ("--change_id", change_id),
+                                     ("--git-url", git_url),
+                                     ("--shasum", shasum),
+                                     ("--branch", branch)];
+
+        for (flag, value) in flags_with_values {
+            maybe_add_flag_value(&mut docker, flag, value);
+        }
+
+        let flags = vec![("--skip-default", skip_default),
+                         ("--local", local)];
+
+        for (flag, value) in flags {
+            maybe_add_flag(&mut docker, flag, value);
+        }
+
+        docker.stdout(Stdio::piped());
+        docker.stderr(Stdio::piped());
+
         debug!("command: {:?}", docker);
         let mut child = try!(docker.spawn());
         let mut c_stdout = match child.stdout {
@@ -691,6 +716,18 @@ fn job(stage: &str,
     sayln("magenta", &format!("Running {} {}", phase_msg, phases.join(", ")));
     try!(ws.run_job(phase, &privilege_drop));
     Ok(())
+}
+
+fn maybe_add_flag_value(cmd: &mut Command, flag: &str, value: &str) {
+    if !value.is_empty() {
+        cmd.arg(flag).arg(value);
+    }
+}
+
+fn maybe_add_flag(cmd: &mut Command, flag: &str, value: &bool) {
+    if *value {
+        cmd.arg(flag);
+    }
 }
 
 fn with_default<'a>(val: &'a str, default: &'a str, local: &bool) -> &'a str {

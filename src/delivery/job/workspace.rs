@@ -103,7 +103,10 @@ impl Workspace {
 
     pub fn build(&self) -> Result<(), DeliveryError> {
         try!(utils::mkdir_recursive(&self.root));
-        try!(utils::mkdir_recursive(&self.chef));
+        // These two directories will get chown'd to the build user,
+        // so we want to make sure they exist.
+        try!(utils::mkdir_recursive(&self.chef.join("nodes")));
+        try!(utils::mkdir_recursive(&self.chef.join("cookbooks")));
         try!(utils::mkdir_recursive(&self.cache));
         try!(utils::mkdir_recursive(&self.repo));
         Ok(())

@@ -631,7 +631,7 @@ fn job(stage: &str,
     let phases: Vec<&str> = phase.split(" ").collect();
     let phase_dir = phases.join("-");
     let job_root_path = if job_root.is_empty() {
-        if privileged_process() && !local {
+        if privileged_process() {
             let phase_path: &[&str] = &[&s[..], &e, &o, &p, &pi, stage,
                                         &phase_dir];
             PathBuf::from("/var/opt/delivery/workspace").join_many(phase_path)
